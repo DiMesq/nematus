@@ -56,7 +56,6 @@ class TextIterator:
         self.source_buffer = []
         self.target_buffer = []
         self.k = batch_size * maxibatch_size
-        
 
         self.end_of_data = False
 
@@ -66,6 +65,8 @@ class TextIterator:
     def reset(self):
         if self.shuffle:
             shuffle.main([self.source.name.replace('.shuf',''), self.target.name.replace('.shuf','')])
+            self.source.close()
+            self.target.close()
             self.source = fopen(self.source.name, 'r')
             self.target = fopen(self.target.name, 'r')
         else:
