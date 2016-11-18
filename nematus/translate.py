@@ -9,13 +9,14 @@ import json
 import cPickle as pkl
 
 from multiprocessing import Process, Queue
-from util import load_dict
+from util import load_dict, load_config
+from compat import fill_options
 
 
 def translate_model(queue, rqueue, pid, models, options, k, normalize, verbose, nbest, return_alignment, suppress_unk):
 
-    from nmt import (build_sampler, gen_sample, load_params,
-                 init_params, init_tparams)
+    from theano_util import (load_params, init_theano_params)
+    from nmt import (build_sampler, gen_sample, init_params)
 
     from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
     from theano import shared
@@ -27,12 +28,10 @@ def translate_model(queue, rqueue, pid, models, options, k, normalize, verbose, 
 
     for model, option in zip(models, options):
 
-        # allocate model parameters
-        params = init_params(option)
 
         # load model parameters and set theano shared variables
-        params = load_params(model, params)
-        tparams = init_tparams(params)
+        params = numpy.load(model)
+        tparams = init_theano_params(params)
 
         # word index
         f_init, f_next = build_sampler(tparams, option, use_noise, trng, return_alignment=return_alignment)
@@ -99,31 +98,14 @@ def print_matrices(mm, file):
     print >>file, "\n"
 
 
-def main(models, source_file, saveto, save_alignment, k=5,
+def main(models, source_file, saveto, save_alignment=None, k=5,
          normalize=False, n_process=5, chr_level=False, verbose=False, nbest=False, suppress_unk=False, a_json=False, print_word_probabilities=False):
     # load model model_options
     options = []
-    for model in args.models:
-        try:
-            with open('%s.json' % model, 'rb') as f:
-                options.append(json.load(f))
-        except:
-            with open('%s.pkl' % model, 'rb') as f:
-                options.append(pkl.load(f))
+    for model in models:
+        options.append(load_config(model))
 
-        #hacks for using old models with missing options
-        if not 'dropout_embedding' in options[-1]:
-            options[-1]['dropout_embedding'] = 0
-        if not 'dropout_hidden' in options[-1]:
-            options[-1]['dropout_hidden'] = 0
-        if not 'dropout_source' in options[-1]:
-            options[-1]['dropout_source'] = 0
-        if not 'dropout_target' in options[-1]:
-            options[-1]['dropout_target'] = 0
-        if not 'factors' in options[-1]:
-            options[-1]['factors'] = 1
-        if not 'dim_per_factor' in options[-1]:
-            options[-1]['dim_per_factor'] = [options[-1]['dim_word']]
+        fill_options(options[-1])
 
     dictionaries = options[0]['dictionaries']
 
@@ -222,7 +204,11 @@ def main(models, source_file, saveto, save_alignment, k=5,
             samples, scores, word_probs, alignment = trans
             order = numpy.argsort(scores)
             for j in order:
-                saveto.write('{0} ||| {1} ||| {2}\n'.format(i, _seqs2words(samples[j]), scores[j]))
+                if print_word_probabilities:
+                    probs = " ||| " + " ".join("{0}".format(prob) for prob in word_probs[j])
+                else:
+                    probs = ""
+                saveto.write('{0} ||| {1} ||| {2}{3}\n'.format(i, _seqs2words(samples[j]), scores[j], probs))
                 # print alignment matrix for each hypothesis
                 # header: sentence id ||| translation ||| score ||| source ||| source_token_count+eos translation_token_count+eos
                 if save_alignment is not None:
@@ -261,7 +247,8 @@ if __name__ == "__main__":
                         help="Normalize scores by sentence length")
     parser.add_argument('-c', action="store_true", help="Character-level")
     parser.add_argument('-v', action="store_true", help="verbose mode.")
-    parser.add_argument('--models', '-m', type=str, nargs = '+', required=True)
+    parser.add_argument('--models', '-m', type=str, nargs = '+', required=True,
+                        help="model to use. Provide multiple models (with same vocabulary) for ensemble decoding")
     parser.add_argument('--input', '-i', type=argparse.FileType('r'),
                         default=sys.stdin, metavar='PATH',
                         help="Input file (default: standard input)")
@@ -276,7 +263,7 @@ if __name__ == "__main__":
     parser.add_argument('--n-best', action="store_true",
                         help="Write n-best list (of size k)")
     parser.add_argument('--suppress-unk', action="store_true", help="Suppress hypotheses containing UNK.")
-    parser.add_argument('--print-word-probabilities', '-wp',action="store_true", help="Print probabilities of each world")
+    parser.add_argument('--print-word-probabilities', '-wp',action="store_true", help="Print probabilities of each word")
 
     args = parser.parse_args()
 
