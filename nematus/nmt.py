@@ -1568,6 +1568,9 @@ def train(dim_word=100,  # word vector dimensionality
     print 'Valid ', valid_err
 
     params = copy.copy(best_p)
+    # Note: when early stopping it may happen than best_p = None,
+    # in which case we get the following error:
+    # TypeError: savez() argument after ** must be a mapping, not NoneType.
     numpy.savez(saveto, zipped_params=best_p,
                 history_errs=history_errs,
                 uidx=uidx,
